@@ -1,5 +1,5 @@
 // Guarda la app para que abra sin conexión. Sube VERSION cuando cambies archivos.
-const VERSION = "macros-v3";
+const VERSION = "macros-v4";
 const SHELL = ["./", "index.html", "styles.css", "app.js", "manifest.json", "icons/icon-180.png", "icons/icon-192.png", "icons/icon-512.png"];
 
 self.addEventListener("install", (e) => {

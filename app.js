@@ -506,8 +506,8 @@ async function askClaude(text, photo) {
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) throw new Error("Tu API key no funciona. Revísala en Ajustes.");
     if (err instanceof Anthropic.PermissionDeniedError) throw new Error("Tu API key no tiene acceso a este modelo. Prueba otro en Ajustes.");
-    if (err instanceof Anthropic.RateLimitError) throw new Error("Muchas consultas seguidas o sin saldo. Espera un momento o revisa tu saldo en console.anthropic.com.");
-    if (err instanceof Anthropic.BadRequestError) throw new Error(/credit|balance/i.test(err.message) ? "Tu cuenta de Anthropic no tiene saldo. Recarga en console.anthropic.com → Billing." : "No se pudo procesar. Intenta con otra foto o descripción.");
+    if (err instanceof Anthropic.RateLimitError) throw new Error("Muchas consultas seguidas o sin saldo. Espera un momento o revisa tu saldo en platform.claude.com.");
+    if (err instanceof Anthropic.BadRequestError) throw new Error(/credit|balance/i.test(err.message) ? "Tu cuenta de Anthropic no tiene saldo. Recarga en platform.claude.com → Billing." : "No se pudo procesar. Intenta con otra foto o descripción.");
     if (err instanceof Anthropic.APIConnectionError) throw new Error("Sin conexión. Revisa tu internet e intenta de nuevo.");
     if (err instanceof Anthropic.APIError) throw new Error("El servicio no respondió bien. Intenta de nuevo en un momento.");
     throw err;
@@ -589,7 +589,7 @@ function goalsForm(el, onDone, { cta = "Continuar" } = {}) {
 function keyForm(el, onDone, { skip = false } = {}) {
   el.innerHTML = `
     <ol class="steps">
-      <li><span>Entra a <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> e inicia sesión.</span></li>
+      <li><span>Entra a <a href="https://platform.claude.com/settings/keys" target="_blank" rel="noopener">platform.claude.com</a> e inicia sesión.</span></li>
       <li><span>En <b>Billing</b>, carga saldo. Con 5 USD tienes para cientos de consultas.</span></li>
       <li><span>En <b>API Keys</b>, toca <b>Create Key</b> y cópiala.</span></li>
     </ol>
