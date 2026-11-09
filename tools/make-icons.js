@@ -19,14 +19,14 @@ function chunk(type, data) {
   return Buffer.concat([len, td, crc]);
 }
 
-// Fondo oscuro con un anillo de tres segmentos (proteína / carbos / grasa)
-const BG = [20, 22, 26];
-const SEG = [[255, 107, 107], [255, 196, 87], [94, 201, 255]];
+// Fondo claro con un anillo de tres segmentos (proteína / carbos / grasa)
+const BG = [246, 245, 241];
+const SEG = [[229, 96, 77], [233, 162, 59], [75, 143, 214]];
 
 function draw(size) {
   const rows = [];
   const cx = size / 2, cy = size / 2;
-  const rOut = size * 0.36, rIn = size * 0.23, gap = 0.08;
+  const rOut = size * 0.34, rIn = size * 0.2, gap = 0.07;
   for (let y = 0; y < size; y++) {
     const row = Buffer.alloc(1 + size * 3);
     for (let x = 0; x < size; x++) {
