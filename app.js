@@ -1,7 +1,7 @@
 // Macros — pesa tu comida, escríbela o tómale foto, y obtén sus macros.
 // Todo vive en este teléfono (localStorage). La IA es Claude, con la API key del usuario.
 
-const APP_VERSION = "3.0";
+const APP_VERSION = "3.1";
 const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.3.0/+esm";
 const DEFAULT_MODEL = "claude-opus-5-5";
 
@@ -46,6 +46,7 @@ const PATHS = {
   clipboard: '<rect x="5.5" y="5" width="13" height="16" rx="2.5"/><path d="M9 5V3.8h6V5"/>',
   bowl: '<path d="M3.5 11h17a8.5 8.5 0 0 1-17 0z"/><path d="M8 8c0-1.5 1-2 1-3.5M12 8c0-1.5 1-2 1-3.5M16 8c0-1.5 1-2 1-3.5"/>',
   refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
 };
 const I = (n, s = 22) => `<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${PATHS[n] || ""}</svg>`;
 
@@ -111,10 +112,15 @@ function bindChips(el, onPick) {
   }));
 }
 
+// Aviso abajo de la pantalla; con action muestra un botón (ej. "Deshacer").
 let toastTimer;
-function toast(msg) {
-  const t = $("#toast"); t.textContent = msg; t.classList.add("show");
-  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove("show"), 2200);
+function toast(msg, action) {
+  const t = $("#toast");
+  t.innerHTML = `<span>${esc(msg)}</span>${action ? `<button id="toast-act">${esc(action.label)}</button>` : ""}`;
+  t.classList.add("show");
+  if (action) $("#toast-act").onclick = () => { t.classList.remove("show"); action.run(); };
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove("show"), action ? 5000 : 2200);
 }
 
 /* ================= Hojas (sheets) ================= */
@@ -130,7 +136,27 @@ function openSheet(name, render, { tall = false } = {}) {
   $(".backdrop", root).onclick = closeSheet;
   root.offsetHeight;
   root.classList.add("open");
+  enableSheetDrag(root);
   return body;
+}
+// Arrastrar la hoja hacia abajo (desde la barrita o el título) la cierra, como en iOS.
+function enableSheetDrag(root) {
+  const sh = $(".sheet", root);
+  let y0 = null, dy = 0;
+  sh.addEventListener("touchstart", (e) => {
+    if (!e.target.closest(".grab, .sheet-head") || e.target.closest("input, button, textarea")) return;
+    y0 = e.touches[0].clientY; dy = 0; sh.style.transition = "none";
+  }, { passive: true });
+  sh.addEventListener("touchmove", (e) => {
+    if (y0 == null) return;
+    dy = Math.max(0, e.touches[0].clientY - y0);
+    sh.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  sh.addEventListener("touchend", () => {
+    if (y0 == null) return;
+    y0 = null; sh.style.transition = ""; sh.style.transform = "";
+    if (dy > 100) closeSheet();
+  });
 }
 function closeSheet() {
   const root = $("#sheet-root");
@@ -168,6 +194,92 @@ function render() {
   ({ home: renderHome, history: renderHistory, foods: renderFoods, settings: renderSettings, add: renderAdd, onboarding: renderOnboarding })[view]();
 }
 
+/* ================= Calendario ================= */
+const MONTHS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const WD = ["L", "M", "M", "J", "V", "S", "D"];
+function dayTotals() {
+  const m = new Map();
+  for (const e of log) m.set(e.date, (m.get(e.date) || 0) + scale(e.per100, e.grams).kcal);
+  return m;
+}
+const markOf = (kcal) => (kcal == null ? "" : kcal > settings.goals.kcal ? "over" : "ok");
+
+// Calendario mensual con selector de mes y año. Marca los días con registros
+// (verde = dentro de la meta, rojo = se pasó).
+function calendar(el, { selected, onPick, onMonth }) {
+  const sel = new Date(selected + "T12:00");
+  let y = sel.getFullYear(), m = sel.getMonth(), mode = "days";
+  const today = dayStr();
+  const ty = +today.slice(0, 4), tm = +today.slice(5, 7) - 1;
+  const totals = dayTotals();
+  const draw = () => {
+    if (mode === "days") {
+      const offset = (new Date(y, m, 1, 12).getDay() + 6) % 7; // semana empieza en lunes
+      const dim = new Date(y, m + 1, 0).getDate();
+      const cells = Array.from({ length: offset }, () => "<span></span>");
+      for (let d = 1; d <= dim; d++) {
+        const ds = dayStr(new Date(y, m, d, 12));
+        const mk = markOf(totals.get(ds));
+        cells.push(`<button class="cal-day ${ds === today ? "today" : ""} ${ds === selected ? "sel" : ""}" data-d="${ds}" ${ds > today ? "disabled" : ""}><span>${d}</span>${mk ? `<i class="mark ${mk}"></i>` : ""}</button>`);
+      }
+      const nextOff = y > ty || (y === ty && m >= tm);
+      el.innerHTML = `<div class="cal">
+        <div class="cal-head"><button class="cal-title" data-act="mode">${cap(MONTHS[m])} ${y} ${I("down", 16)}</button>
+          <div class="cal-nav"><button class="icon-btn plain" data-act="prev" aria-label="Mes anterior">${I("left", 20)}</button>
+          <button class="icon-btn plain" data-act="next" aria-label="Mes siguiente" ${nextOff ? "disabled" : ""}>${I("right", 20)}</button></div></div>
+        <div class="cal-wd">${WD.map((w) => `<span>${w}</span>`).join("")}</div>
+        <div class="cal-grid">${cells.join("")}</div></div>`;
+    } else {
+      el.innerHTML = `<div class="cal">
+        <div class="cal-head"><button class="cal-title open" data-act="mode">${y} ${I("down", 16)}</button>
+          <div class="cal-nav"><button class="icon-btn plain" data-act="prevY" aria-label="Año anterior">${I("left", 20)}</button>
+          <button class="icon-btn plain" data-act="nextY" aria-label="Año siguiente" ${y >= ty ? "disabled" : ""}>${I("right", 20)}</button></div></div>
+        <div class="cal-months">${MONTHS.map((n, i) => `<button data-mon="${i}" class="${i === m ? "sel" : ""}" ${y > ty || (y === ty && i > tm) ? "disabled" : ""}>${cap(n.slice(0, 3))}</button>`).join("")}</div></div>`;
+    }
+    $$("[data-act]", el).forEach((b) => (b.onclick = () => {
+      const a = b.dataset.act;
+      if (a === "mode") mode = mode === "days" ? "months" : "days";
+      if (a === "prev") { m--; if (m < 0) { m = 11; y--; } }
+      if (a === "next") { m++; if (m > 11) { m = 0; y++; } }
+      if (a === "prevY") y--;
+      if (a === "nextY") y++;
+      if (y === ty && m > tm) m = tm;
+      draw();
+      if (a !== "mode") onMonth?.(y, m);
+    }));
+    $$("[data-mon]", el).forEach((b) => (b.onclick = () => { m = +b.dataset.mon; mode = "days"; draw(); onMonth?.(y, m); }));
+    $$("[data-d]", el).forEach((b) => (b.onclick = () => onPick(b.dataset.d)));
+  };
+  draw();
+  onMonth?.(y, m);
+}
+
+function openCalendar(selected, onPick) {
+  openSheet("cal", (body) => {
+    body.innerHTML = `<div class="sheet-head"><h2>Elige un día</h2><button class="icon-btn" data-close aria-label="Cerrar">${I("x", 20)}</button></div>
+      <div id="calbox"></div>
+      <button class="btn block mt" id="gotoday">Ir a hoy</button>`;
+    calendar($("#calbox", body), { selected, onPick: (d) => { closeSheet(); onPick(d); } });
+    $("#gotoday", body).onclick = () => { closeSheet(); onPick(dayStr()); };
+  });
+}
+
+// Fila "Día" con calendario desplegable dentro de una pantalla u hoja.
+function dayPicker(root, getDate, setDate) {
+  const btn = $("#daybtn", root), box = $("#calinline", root);
+  btn.onclick = () => {
+    box.hidden = !box.hidden;
+    btn.classList.toggle("open", !box.hidden);
+    if (!box.hidden) {
+      calendar(box, { selected: getDate(), onPick: (d) => { setDate(d); $("#dayv", root).textContent = dayLabel(d); box.hidden = true; btn.classList.remove("open"); } });
+      setTimeout(() => box.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+    }
+  };
+}
+const dayPickerHTML = (date) => `<div class="group">
+  <button class="field tap" id="daybtn" style="width:100%"><label style="text-align:left">Día</label><span class="val" id="dayv">${dayLabel(date)}</span><span class="val chev-rot">${I("down", 16)}</span></button>
+  <div id="calinline" class="cal-inline" hidden></div></div>`;
+
 /* ================= INICIO ================= */
 function renderHome() {
   const entries = log.filter((e) => e.date === viewDate);
@@ -179,46 +291,73 @@ function renderHome() {
   const today = dayStr();
   const isToday = viewDate === today;
   const d = new Date(viewDate + "T12:00");
-  const sub = cap(d.toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" }));
-  const title = isToday ? "Hoy" : dayLabel(viewDate) === "Ayer" ? "Ayer" : cap(d.toLocaleDateString("es-PE", { weekday: "long" }));
+  const sameYear = d.getFullYear() === new Date().getFullYear();
+  const lbl = dayLabel(viewDate);
+  const sub = lbl === "Hoy" || lbl === "Ayer"
+    ? cap(d.toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long", ...(sameYear ? {} : { year: "numeric" }) }))
+    : `${cap(MONTHS[d.getMonth()])} ${d.getFullYear()}`;
+  const title = lbl === "Hoy" || lbl === "Ayer" ? lbl : `${cap(d.toLocaleDateString("es-PE", { weekday: "long" }))} ${d.getDate()}`;
   const pct = (v, goal) => Math.min(100, goal ? (v / goal) * 100 : 0);
-  const macro = (k, cls, label) => `
+  const macro = (k, cls, label) => {
+    const over = t[k] > g[k];
+    return `
     <div class="macro">
       <div class="lbl"><i class="dot ${cls}"></i>${label}</div>
       <div class="val">${fmt(t[k])}<small> / ${fmt(g[k])} g</small></div>
       <div class="track"><i class="${cls}" style="width:${pct(t[k], g[k])}%"></i></div>
+      <div class="rem ${over ? "over" : ""}">${over ? `${fmt(t[k] - g[k])} g de más` : `quedan ${fmt(g[k] - t[k])} g`}</div>
     </div>`;
+  };
+
+  // Semana (lunes a domingo) del día que estás viendo
+  const monday = new Date(d); monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const totals = dayTotals();
+  let week = "";
+  for (let i = 0; i < 7; i++) {
+    const x = new Date(monday); x.setDate(monday.getDate() + i);
+    const ds = dayStr(x);
+    week += `<button class="wd ${ds === viewDate ? "sel" : ""} ${ds === today ? "today" : ""}" data-wd="${ds}" ${ds > today ? "disabled" : ""}>
+      <span class="wl">${WD[i]}</span><span class="wn">${x.getDate()}</span><i class="wdot ${markOf(totals.get(ds))}"></i></button>`;
+  }
+  const nextMonday = new Date(monday); nextMonday.setDate(monday.getDate() + 7);
+  const nextWeekOff = dayStr(nextMonday) > today;
 
   const meals = MEALS.map((m) => {
     const list = entries.filter((e) => e.meal === m);
-    if (!list.length) return "";
     return `<section class="meal">
-      <div class="meal-head"><h3>${m}</h3><span>${fmt(sum(list).kcal)} kcal</span></div>
+      <div class="meal-head"><h3>${m}</h3>
+        <span>${list.length ? `${fmt(sum(list).kcal)} kcal` : ""}${!isToday && list.length ? `<button class="link sm" data-repeat="${m}">Repetir hoy</button>` : ""}</span></div>
       <div class="list">${list.map((e) => {
         const s = scale(e.per100, e.grams);
         return `<button class="row" data-entry="${e.id}">
-          <div class="grow"><div class="t ellipsis">${esc(e.name)}</div><div class="s">${fmt(e.grams)} g</div></div>
+          <div class="grow"><div class="t ellipsis">${esc(e.name)}</div><div class="s">${fmt(e.grams)} g · P ${fmt(s.protein)} · C ${fmt(s.carbs)} · G ${fmt(s.fat)}</div></div>
           <div class="k">${fmt(s.kcal)} <small>kcal</small></div></button>`;
-      }).join("")}</div></section>`;
+      }).join("")}
+        <button class="row add-row" data-addmeal="${m}">${I("plus", 18)}<span>Agregar a ${m.toLowerCase()}</span></button>
+      </div></section>`;
   }).join("");
 
   $("#app").innerHTML = `
-    <header class="home-head">
-      <div>
-        <div class="eyebrow">
-          <button class="icon-btn plain" id="prev" aria-label="Día anterior">${I("left", 18)}</button>
-          <span>${sub}</span>
-          <button class="icon-btn plain" id="next" aria-label="Día siguiente" ${isToday ? "disabled" : ""}>${I("right", 18)}</button>
-        </div>
-        <h1 style="display:flex;align-items:center">${title}${isToday ? "" : `<button class="today-chip" id="today">Ir a hoy</button>`}</h1>
+    <header class="home-head2">
+      <div class="grow">
+        <button class="date-btn" id="datebtn" aria-label="Cambiar día"><span class="h1">${title}</span>${I("down", 22)}</button>
+        <div class="date-sub">${sub}</div>
       </div>
+      ${isToday ? "" : `<button class="today-chip" id="today">Hoy</button>`}
+      <button class="icon-btn" id="calbtn" aria-label="Abrir calendario">${I("calendar", 20)}</button>
     </header>
+
+    <div class="week" id="week">
+      <button class="icon-btn plain" id="pw" aria-label="Semana anterior">${I("left", 18)}</button>
+      <div class="week-days">${week}</div>
+      <button class="icon-btn plain" id="nw" aria-label="Semana siguiente" ${nextWeekOff ? "disabled" : ""}>${I("right", 18)}</button>
+    </div>
 
     <section class="summary">
       <div class="ring-wrap">
         <svg class="ring" viewBox="0 0 172 172">
           <circle class="ring-bg" cx="86" cy="86" r="${R}"/>
-          <circle class="ring-fg ${left < 0 ? "over" : ""}" cx="86" cy="86" r="${R}" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}" transform="rotate(-90 86 86)"/>
+          <circle class="ring-fg ${left < 0 ? "over" : ""}" style="stroke-linecap:${frac > 0.95 ? "butt" : "round"}" cx="86" cy="86" r="${R}" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}" transform="rotate(-90 86 86)"/>
         </svg>
         <div class="ring-center"><b>${fmt(Math.abs(left))}</b><span>${left >= 0 ? "kcal restantes" : "kcal de más"}</span></div>
       </div>
@@ -237,44 +376,93 @@ function renderHome() {
       <button class="tile" data-mode="plato"><span class="ti t3">${I("plate", 22)}</span><b>Plato</b><span>foto de tu comida</span></button>
     </div>
 
-    ${meals || `<div class="empty" style="padding-top:28px"><p>${isToday ? "Aún no registras nada hoy." : "No registraste nada este día."}</p></div>`}
+    ${meals}
   `;
-  const shift = (n) => { const x = new Date(viewDate + "T12:00"); x.setDate(x.getDate() + n); viewDate = dayStr(x); renderHome(); };
-  $("#prev").onclick = () => shift(-1);
-  $("#next").onclick = () => shift(1);
-  $("#today")?.addEventListener("click", () => { viewDate = today; renderHome(); });
+  const pick = (ds) => { viewDate = ds > today ? today : ds; renderHome(); };
+  const shiftWeek = (n) => { const x = new Date(viewDate + "T12:00"); x.setDate(x.getDate() + 7 * n); pick(dayStr(x)); };
+  $("#datebtn").onclick = () => openCalendar(viewDate, pick);
+  $("#calbtn").onclick = () => openCalendar(viewDate, pick);
+  $("#today")?.addEventListener("click", () => pick(today));
+  $("#pw").onclick = () => shiftWeek(-1);
+  $("#nw").onclick = () => shiftWeek(1);
+  $$("[data-wd]").forEach((b) => (b.onclick = () => pick(b.dataset.wd)));
+  // Deslizar la semana con el dedo
+  const wk = $("#week"); let wx = null;
+  wk.addEventListener("touchstart", (e) => { wx = e.touches[0].clientX; }, { passive: true });
+  wk.addEventListener("touchend", (e) => {
+    if (wx == null) return;
+    const dx = e.changedTouches[0].clientX - wx; wx = null;
+    if (dx > 50) shiftWeek(-1); else if (dx < -50 && !nextWeekOff) shiftWeek(1);
+  }, { passive: true });
   $("#more").onclick = () => { showMore = !showMore; renderHome(); };
   $$("[data-mode]").forEach((b) => b.addEventListener("click", () => openAdd(b.dataset.mode)));
+  $$("[data-addmeal]").forEach((b) => b.addEventListener("click", () => openAdd("texto", b.dataset.addmeal)));
   $$("[data-entry]").forEach((b) => b.addEventListener("click", () => openEntry(b.dataset.entry)));
+  $$("[data-repeat]").forEach((b) => b.addEventListener("click", (ev) => {
+    ev.stopPropagation();
+    const m = b.dataset.repeat;
+    const copies = entries.filter((e) => e.meal === m).map((e) => ({ ...e, id: uid(), date: today, time: new Date().toISOString() }));
+    log.push(...copies); saveLog(); renderHome();
+    toast(`${m} copiado a hoy`, {
+      label: "Deshacer",
+      run: () => { const ids = new Set(copies.map((c) => c.id)); log = log.filter((e) => !ids.has(e.id)); saveLog(); render(); },
+    });
+  }));
 }
 
 /* ================= HISTORIAL ================= */
 function renderHistory() {
-  const days = [...new Set(log.map((e) => e.date))].sort().reverse().slice(0, 90);
-  const g = settings.goals;
   $("#app").innerHTML = `
     <h1 class="page-title" style="margin-top:14px">Historial</h1>
-    ${days.length ? `<div class="list">${days.map((ds) => {
-      const t = sum(log.filter((e) => e.date === ds));
-      const over = t.kcal > g.kcal;
+    <div class="card-cal" id="hcal"></div>
+    <div id="hsum"></div>`;
+  calendar($("#hcal"), {
+    selected: viewDate,
+    onPick: (d) => { viewDate = d; go("home"); },
+    onMonth: drawHistoryMonth,
+  });
+}
+
+function drawHistoryMonth(y, m) {
+  const box = $("#hsum"); if (!box) return;
+  const g = settings.goals;
+  const prefix = `${y}-${String(m + 1).padStart(2, "0")}`;
+  const days = [...new Set(log.filter((e) => e.date.startsWith(prefix)).map((e) => e.date))].sort().reverse();
+  if (!days.length) {
+    box.innerHTML = `<p class="foot" style="text-align:center;margin-top:18px">No registraste nada en ${MONTHS[m]}.</p>`;
+    return;
+  }
+  const totals = days.map((ds) => sum(log.filter((e) => e.date === ds)));
+  const avg = (k) => totals.reduce((a, t) => a + t[k], 0) / totals.length;
+  const inGoal = totals.filter((t) => t.kcal <= g.kcal).length;
+  box.innerHTML = `
+    <div class="group-title">Resumen de ${MONTHS[m]}</div>
+    <div class="stat-row">
+      <div><b>${days.length}</b>días</div>
+      <div><b>${fmt(avg("kcal"))}</b>kcal prom.</div>
+      <div><b>${fmt(avg("protein"))}</b><span><i class="dot p"></i> prot prom.</span></div>
+      <div><b>${inGoal}/${days.length}</b>en meta</div>
+    </div>
+    <div class="list">${days.map((ds, i) => {
+      const t = totals[i];
       return `<button class="row day-row" data-day="${ds}">
         <div class="grow"><div class="t">${dayLabel(ds)}</div>
           <div class="s">P ${fmt(t.protein)} · C ${fmt(t.carbs)} · G ${fmt(t.fat)} g</div></div>
         <div class="right"><div class="k">${fmt(t.kcal)} <small>/ ${fmt(g.kcal)}</small></div>
-          <div class="bar-mini"><i class="${over ? "over" : ""}" style="width:${Math.min(100, g.kcal ? (t.kcal / g.kcal) * 100 : 0)}%"></i></div></div>
+          <div class="bar-mini"><i class="${t.kcal > g.kcal ? "over" : ""}" style="width:${Math.min(100, g.kcal ? (t.kcal / g.kcal) * 100 : 0)}%"></i></div></div>
         <span class="chev">${I("right", 18)}</span></button>`;
-    }).join("")}</div>`
-    : `<div class="empty"><div class="art">${I("clock", 28)}</div><h3>Sin días registrados</h3><p>Aquí verás cada día con sus calorías y macros.</p></div>`}`;
-  $$("[data-day]").forEach((b) => b.addEventListener("click", () => { viewDate = b.dataset.day; go("home"); }));
+    }).join("")}</div>`;
+  $$("[data-day]", box).forEach((b) => b.addEventListener("click", () => { viewDate = b.dataset.day; go("home"); }));
 }
 
 /* ================= REGISTRAR (página) ================= */
 let add = null; // { mode, text, qty, note, photo, busy, error, results, notes, questions, answers, clar, meal }
-const freshAdd = (mode) => ({ mode, text: "", qty: "", note: "", photo: null, busy: false, error: null, results: null, notes: "", questions: [], answers: {}, clar: [], meal: mealNow() });
+const freshAdd = (mode) => ({ mode, text: "", qty: "", note: "", photo: null, busy: false, error: null, results: null, notes: "", questions: [], answers: {}, clar: [], meal: mealNow(), date: viewDate });
 
-function openAdd(mode) {
+function openAdd(mode, meal) {
   if (!add || (!add.busy && !add.results)) add = freshAdd(mode || "texto");
   else if (mode && add.mode !== mode && !add.busy) add = freshAdd(mode);
+  if (meal) add.meal = meal;
   go("add");
   if (add.mode === "texto" && !add.results && !add.busy) setTimeout(() => $("#txt")?.focus(), 250);
 }
@@ -336,7 +524,7 @@ function renderAdd() {
   $("#back").onclick = leaveAdd;
   $$("[data-m]").forEach((b) => b.addEventListener("click", () => {
     if (s.mode === b.dataset.m) return;
-    add = freshAdd(b.dataset.m); renderAdd();
+    add = { ...freshAdd(b.dataset.m), meal: s.meal, date: s.date }; renderAdd();
     if (add.mode === "texto") $("#txt")?.focus();
   }));
   $("#cam")?.addEventListener("click", () => pickPhoto("cam"));
@@ -442,7 +630,9 @@ function renderResults() {
       </div>`;
     }).join("")}
     ${s.notes ? `<p class="note">${esc(s.notes)}</p>` : ""}
-    <div class="section-title" style="margin-top:18px">¿En qué comida?</div>
+    <div class="section-title" style="margin-top:18px">¿Cuándo?</div>
+    ${dayPickerHTML(s.date)}
+    <div style="height:10px"></div>
     ${mealChips(s.meal)}
     </div>
     <div class="sticky-cta"><button class="btn primary block" id="save" ${s.busy ? "disabled" : ""}>Agregar · <span id="tot">${fmt(total().kcal)}</span> kcal</button></div>
@@ -475,15 +665,19 @@ function renderResults() {
     };
   });
   bindChips($("#app"), (m) => (s.meal = m));
+  dayPicker($("#app"), () => s.date, (d) => (s.date = d));
   $("#save").onclick = () => {
+    const ids = [];
     for (const it of s.results) {
       if (!it.grams) continue;
       const name = it.name.trim() || "Alimento";
-      log.push({ id: uid(), date: viewDate, time: new Date().toISOString(), meal: s.meal, name, grams: it.grams, per100: it.per100 });
+      const id = uid(); ids.push(id);
+      log.push({ id, date: s.date, time: new Date().toISOString(), meal: s.meal, name, grams: it.grams, per100: it.per100 });
       rememberFood(name, it.per100, it.grams);
     }
     saveLog(); saveFoods();
-    add = null; go("home"); toast(`Agregado a ${s.meal}`);
+    add = null; viewDate = s.date; go("home");
+    toast(`Agregado a ${s.meal}`, { label: "Deshacer", run: () => { log = log.filter((e) => !ids.includes(e.id)); saveLog(); render(); } });
   };
 }
 
@@ -491,13 +685,14 @@ function renderResults() {
 function openQuick(id) {
   const f = foods.find((x) => x.id === id); if (!f) return;
   let meal = add?.meal || mealNow();
+  let date = add?.date || viewDate;
   openSheet("quick", (body) => {
     body.innerHTML = `
       <div class="sheet-head"><h2 class="ellipsis">${esc(f.name)}</h2><button class="icon-btn" data-close aria-label="Cerrar">${I("x", 20)}</button></div>
       <label class="big-grams"><input id="g" type="number" inputmode="decimal" placeholder="${f.lastGrams || 100}"><span>g</span></label>
       <div class="big-caption">Escribe lo que marca tu balanza</div>
       <div class="stat-row" id="stats"></div>
-      <div class="section-title" style="margin-top:0">¿En qué comida?</div>
+      ${dayPickerHTML(date)}
       ${mealChips(meal)}
       <button class="btn primary block" id="ok">Agregar</button>
       ${view === "foods" ? `<button class="link" id="edit" style="width:100%;margin-top:4px">Editar alimento</button>` : ""}`;
@@ -509,12 +704,15 @@ function openQuick(id) {
     };
     draw(); g.addEventListener("input", draw);
     setTimeout(() => g.focus(), 350);
+    dayPicker(body, () => date, (d) => (date = d));
     bindChips(body, (m) => (meal = m));
     $("#ok", body).onclick = () => {
       const qty = grams(); if (!qty) { toast("Pon los gramos"); return; }
-      log.push({ id: uid(), date: viewDate, time: new Date().toISOString(), meal, name: f.name, grams: qty, per100: f.per100 });
+      const entry = { id: uid(), date, time: new Date().toISOString(), meal, name: f.name, grams: qty, per100: f.per100 };
+      log.push(entry);
       f.used = Date.now(); f.lastGrams = qty; saveLog(); saveFoods();
-      add = null; closeSheet(); go("home"); toast(`Agregado a ${meal}`);
+      add = null; closeSheet(); viewDate = date; go("home");
+      toast(`Agregado a ${meal}`, { label: "Deshacer", run: () => { log = log.filter((x) => x.id !== entry.id); saveLog(); render(); } });
     };
     $("#edit", body)?.addEventListener("click", () => editFood(f.id));
   });
@@ -530,27 +728,48 @@ function rememberFood(name, per100, grams) {
 function openEntry(id) {
   const e = log.find((x) => x.id === id); if (!e) return;
   let meal = e.meal;
+  let date = e.date;
+  const today = dayStr();
   openSheet("entry", (body) => {
     body.innerHTML = `
       <div class="sheet-head"><input class="name-input" id="nm" value="${esc(e.name)}" aria-label="Nombre"><button class="icon-btn" data-close aria-label="Cerrar">${I("x", 20)}</button></div>
       <label class="big-grams"><input id="g" type="number" inputmode="decimal" value="${e.grams}"><span>g</span></label>
       <div class="big-caption">Toca el número para cambiar los gramos</div>
-      <div class="nutr" id="tbl"></div>
+      <div class="stat-row" id="stats"></div>
+      <button class="more-toggle" id="allnutr" style="border:0;margin:-6px 0 8px;padding-top:0">Todos los nutrientes ${I("down", 16)}</button>
+      <div class="nutr" id="tbl" hidden></div>
+      ${dayPickerHTML(date)}
       ${mealChips(meal)}
-      <button class="btn primary block" id="ok">Guardar</button>
-      <button class="link danger" id="del" style="width:100%;margin-top:4px">Eliminar</button>`;
+      <button class="btn primary block" id="ok">Guardar cambios</button>
+      <div class="split-actions">
+        <button class="link" id="dup">${e.date === today ? "Duplicar" : "Repetir hoy"}</button>
+        <button class="link danger" id="del">Eliminar</button>
+      </div>`;
     const g = $("#g", body);
     const draw = () => {
       const x = scale(e.per100, num(g.value));
+      $("#stats", body).innerHTML = `<div><b>${fmt(x.kcal)}</b>kcal</div><div><b>${fmt(x.protein, 1)}</b><span><i class="dot p"></i> prot</span></div><div><b>${fmt(x.carbs, 1)}</b><span><i class="dot c"></i> carb</span></div><div><b>${fmt(x.fat, 1)}</b><span><i class="dot f"></i> grasa</span></div>`;
       $("#tbl", body).innerHTML = NUTR.map((n) => `<div><span>${n.label}</span><b>${fmt(x[n.k], n.d)} ${n.unit}</b></div>`).join("");
     };
     draw(); g.addEventListener("input", draw);
+    $("#allnutr", body).onclick = (ev) => { const t = $("#tbl", body); t.hidden = !t.hidden; ev.currentTarget.classList.toggle("open", !t.hidden); };
+    dayPicker(body, () => date, (d) => (date = d));
     bindChips(body, (m) => (meal = m));
     $("#ok", body).onclick = () => {
-      e.grams = num(g.value); e.meal = meal; e.name = $("#nm", body).value.trim() || e.name;
-      saveLog(); closeSheet(); renderHome();
+      const qty = num(g.value); if (!qty) { toast("Pon los gramos"); return; }
+      e.grams = qty; e.meal = meal; e.date = date; e.name = $("#nm", body).value.trim() || e.name;
+      saveLog(); closeSheet(); render(); toast("Guardado");
     };
-    $("#del", body).onclick = () => { log = log.filter((x) => x.id !== id); saveLog(); closeSheet(); renderHome(); toast("Eliminado"); };
+    $("#dup", body).onclick = () => {
+      const copy = { ...e, id: uid(), date: today, time: new Date().toISOString(), grams: num(g.value) || e.grams };
+      log.push(copy); saveLog(); closeSheet(); render();
+      toast(e.date === today ? "Duplicado" : "Agregado a hoy", { label: "Deshacer", run: () => { log = log.filter((x) => x.id !== copy.id); saveLog(); render(); } });
+    };
+    $("#del", body).onclick = () => {
+      const idx = log.indexOf(e);
+      log.splice(idx, 1); saveLog(); closeSheet(); render();
+      toast("Eliminado", { label: "Deshacer", run: () => { log.splice(idx, 0, e); saveLog(); render(); } });
+    };
   });
 }
 
@@ -892,7 +1111,11 @@ function editFood(id) {
       if (isNew) foods.push(f);
       saveFoods(); closeSheet(); renderFoods();
     };
-    $("#del", body)?.addEventListener("click", () => { foods = foods.filter((x) => x.id !== f.id); saveFoods(); closeSheet(); renderFoods(); toast("Eliminado"); });
+    $("#del", body)?.addEventListener("click", () => {
+      const idx = foods.indexOf(f);
+      foods.splice(idx, 1); saveFoods(); closeSheet(); renderFoods();
+      toast("Alimento eliminado", { label: "Deshacer", run: () => { foods.splice(idx, 0, f); saveFoods(); render(); } });
+    });
   }, { tall: true });
 }
 
@@ -907,4 +1130,37 @@ if ("serviceWorker" in navigator && location.protocol === "https:") {
     if (hadController && !add && !sheet) location.reload();
   });
 }
+
+// Si la app queda abierta y pasa la medianoche, "Hoy" pasa al día nuevo.
+let lastToday = dayStr();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState !== "visible") return;
+  const t = dayStr();
+  if (t === lastToday) return;
+  if (viewDate === lastToday) viewDate = t;
+  lastToday = t;
+  if (TABS.includes(view)) render();
+});
+
+// Deslizar desde el borde izquierdo = Atrás (como en iOS).
+let edgeX = null, edgeY = 0;
+document.addEventListener("touchstart", (e) => {
+  const p = e.touches[0];
+  edgeX = p.clientX < 28 && !sheet && !TABS.includes(view) ? p.clientX : null;
+  edgeY = p.clientY;
+}, { passive: true });
+document.addEventListener("touchend", (e) => {
+  if (edgeX == null) return;
+  const p = e.changedTouches[0];
+  if (p.clientX - edgeX > 80 && Math.abs(p.clientY - edgeY) < 60) ($("#back") || $("#obback"))?.click();
+  edgeX = null;
+}, { passive: true });
+
+// El teclado no tapa las hojas: se suben lo que ocupa el teclado.
+if (window.visualViewport) {
+  const vv = window.visualViewport;
+  const kb = () => document.documentElement.style.setProperty("--kb", `${Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop))}px`);
+  vv.addEventListener("resize", kb); vv.addEventListener("scroll", kb);
+}
+
 render();
