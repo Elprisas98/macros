@@ -1,0 +1,112 @@
+:root {
+  --bg: #14161a;
+  --card: #1d2026;
+  --card2: #262a32;
+  --line: #2f343d;
+  --text: #f1f3f6;
+  --muted: #9aa3ae;
+  --accent: #7ee0a1;
+  --prot: #ff6b6b;
+  --carb: #ffc457;
+  --fat: #5ec9ff;
+  --danger: #ff6b6b;
+  --r: 16px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-t: env(safe-area-inset-top, 0px);
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body {
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  padding: calc(var(--safe-t) + 12px) 16px calc(var(--safe-b) + 88px);
+  min-height: 100vh;
+}
+h1 { font-size: 28px; margin: 4px 0 14px; letter-spacing: -0.02em; }
+h2 { font-size: 15px; margin: 22px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+p { margin: 0 0 10px; }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.hidden { display: none !important; }
+
+.card { background: var(--card); border-radius: var(--r); padding: 14px; margin-bottom: 10px; }
+.row { display: flex; align-items: center; gap: 10px; }
+.row.between { justify-content: space-between; }
+.grow { flex: 1; min-width: 0; }
+
+button, .btn {
+  font: inherit; border: 0; border-radius: 12px; padding: 12px 16px; cursor: pointer;
+  background: var(--card2); color: var(--text); font-weight: 600;
+}
+button.primary { background: var(--accent); color: #0d1a12; }
+button.ghost { background: transparent; color: var(--muted); padding: 8px; }
+button.danger { background: transparent; color: var(--danger); }
+button.block { width: 100%; }
+button:disabled { opacity: .5; }
+
+input, select, textarea {
+  font: inherit; font-size: 16px; color: var(--text); background: var(--card2);
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px; width: 100%;
+}
+textarea { resize: vertical; min-height: 84px; }
+label { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 6px; }
+
+/* Barra inferior */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; display: flex;
+  background: rgba(20,22,26,.94); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  border-top: 1px solid var(--line); padding: 6px 4px calc(var(--safe-b) + 6px); z-index: 10;
+}
+.tabbar button { flex: 1; background: none; color: var(--muted); font-size: 11px; font-weight: 500; padding: 6px 0; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.tabbar button .ti { font-size: 20px; line-height: 1; }
+.tabbar button.active { color: var(--accent); }
+
+/* Resumen del día */
+.daynav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.daynav button { background: var(--card); padding: 8px 14px; }
+.kcal-big { font-size: 40px; font-weight: 700; letter-spacing: -0.03em; }
+.bar { height: 8px; background: var(--card2); border-radius: 99px; overflow: hidden; margin-top: 6px; }
+.bar > i { display: block; height: 100%; border-radius: 99px; background: var(--accent); }
+.bar.over > i { background: var(--danger); }
+.macros3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px; }
+.macros3 .m b { font-size: 18px; }
+.macros3 .m .bar > i { background: currentColor; }
+.c-prot { color: var(--prot); } .c-carb { color: var(--carb); } .c-fat { color: var(--fat); }
+.extras { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; font-size: 12px; color: var(--muted); }
+.extras b { display: block; color: var(--text); font-size: 14px; }
+
+/* Lista de alimentos */
+.item { display: flex; gap: 10px; align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.item:first-of-type { border-top: 0; }
+.item .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item .sub { font-size: 13px; color: var(--muted); }
+.item .kc { font-weight: 700; white-space: nowrap; }
+.tap { cursor: pointer; }
+
+/* Agregar */
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; background: var(--card); padding: 4px; border-radius: 14px; margin-bottom: 12px; }
+.seg button { background: transparent; color: var(--muted); padding: 10px 4px; font-size: 14px; }
+.seg button.on { background: var(--card2); color: var(--text); }
+.photo-drop { border: 1.5px dashed var(--line); border-radius: var(--r); padding: 20px; text-align: center; color: var(--muted); }
+.photo-drop img { max-width: 100%; max-height: 260px; border-radius: 12px; display: block; margin: 0 auto 10px; }
+.btnrow { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+
+.result { background: var(--card); border-radius: var(--r); padding: 14px; margin-bottom: 10px; }
+.result .grams { width: 96px; text-align: right; }
+.result .facts { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: var(--card2); color: var(--muted); font-weight: 600; }
+.badge.alta { color: var(--accent); } .badge.baja { color: var(--carb); }
+.check { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--muted); margin-top: 8px; }
+.check input { width: 20px; height: 20px; }
+
+.spinner { width: 22px; height: 22px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; display: inline-block; vertical-align: middle; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Hoja inferior */
+.sheet { position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 20; display: flex; align-items: flex-end; }
+.sheet-card { background: var(--card); width: 100%; border-radius: 22px 22px 0 0; padding: 18px 16px calc(var(--safe-b) + 18px); max-height: 88vh; overflow: auto; }
+.toast { position: fixed; left: 16px; right: 16px; bottom: calc(var(--safe-b) + 84px); background: var(--card2); padding: 12px 14px; border-radius: 12px; z-index: 30; text-align: center; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+
+.nutr-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.nutr-table td { padding: 6px 0; border-top: 1px solid var(--line); }
+.nutr-table td:last-child { text-align: right; font-weight: 600; }
+.search { margin-bottom: 10px; }
