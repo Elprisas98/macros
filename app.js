@@ -1,6 +1,7 @@
 // Macros — pesa tu comida, escríbela o tómale foto, y obtén sus macros.
 // Todo vive en este teléfono (localStorage). La IA es Claude, con la API key del usuario.
 
+const APP_VERSION = "3.0";
 const SDK_URL = "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk@1.3.0/+esm";
 const DEFAULT_MODEL = "claude-opus-5-5";
 
@@ -16,6 +17,11 @@ const NUTR = [
   { k: "sodium", label: "Sodio", unit: "mg", d: 0 },
 ];
 const MEALS = ["Desayuno", "Almuerzo", "Cena", "Snack"];
+const MODES = {
+  texto: { label: "Escribir", icon: "pencil" },
+  etiqueta: { label: "Etiqueta", icon: "label" },
+  plato: { label: "Plato", icon: "plate" },
+};
 
 /* ================= Íconos ================= */
 const PATHS = {
@@ -23,21 +29,25 @@ const PATHS = {
   camera: '<path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.6-2.2h5.8L16.5 7h2A1.5 1.5 0 0 1 20 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.5z"/><circle cx="12" cy="12.8" r="3.4"/>',
   image: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 15.5l-4.5-4.5-8.5 8.5"/>',
   sliders: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  home: '<path d="M4 10.5L12 4l8 6.5V19a1.5 1.5 0 0 1-1.5 1.5H15v-5.5H9v5.5H5.5A1.5 1.5 0 0 1 4 19z"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
   left: '<path d="M15 5l-7 7 7 7"/>',
   right: '<path d="M9 5l7 7-7 7"/>',
   down: '<path d="M6 9l6 6 6-6"/>',
   x: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.2-4.2"/>',
   pencil: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
-  bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
+  label: '<rect x="5" y="3.5" width="14" height="17" rx="2.5"/><path d="M8.5 8h7M8.5 11.5h7M8.5 15h4"/>',
+  plate: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/>',
   scale: '<rect x="3.5" y="12" width="17" height="7.5" rx="2.5"/><path d="M8 12a4 4 0 0 1 8 0"/><path d="M12 12l1.5-2"/>',
+  bolt: '<path d="M13 3L5 14h6l-1 7 8-11h-6z"/>',
   sparkle: '<path d="M12 3.5l1.8 5 5 1.8-5 1.8-1.8 5-1.8-5-5-1.8 5-1.8z"/>',
   lock: '<rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/>',
   clipboard: '<rect x="5.5" y="5" width="13" height="16" rx="2.5"/><path d="M9 5V3.8h6V5"/>',
   bowl: '<path d="M3.5 11h17a8.5 8.5 0 0 1-17 0z"/><path d="M8 8c0-1.5 1-2 1-3.5M12 8c0-1.5 1-2 1-3.5M16 8c0-1.5 1-2 1-3.5"/>',
-  info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5M12 8v.01"/>',
+  refresh: '<path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4h-4"/>',
 };
-const I = (n, s = 22) => `<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${PATHS[n]}</svg>`;
+const I = (n, s = 22) => `<svg class="i" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${PATHS[n] || ""}</svg>`;
 
 /* ================= Almacenamiento ================= */
 const store = {
@@ -54,7 +64,7 @@ let settings = Object.assign(
   },
   store.get("macros.settings", {})
 );
-if (!settings.onboarded && (settings.apiKey || log.length)) settings.onboarded = true; // usuarios de la versión anterior
+if (!settings.onboarded && (settings.apiKey || log.length)) settings.onboarded = true;
 const saveLog = () => store.set("macros.log", log);
 const saveFoods = () => store.set("macros.foods", foods);
 const saveSettings = () => store.set("macros.settings", settings);
@@ -84,6 +94,12 @@ function mealNow() {
   const h = new Date().getHours();
   return h < 11 ? "Desayuno" : h < 16 ? "Almuerzo" : h < 22 ? "Cena" : "Snack";
 }
+function dayLabel(ds) {
+  const t = dayStr(); const y = new Date(); y.setDate(y.getDate() - 1);
+  if (ds === t) return "Hoy";
+  if (ds === dayStr(y)) return "Ayer";
+  return cap(new Date(ds + "T12:00").toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "short" }));
+}
 const macroLine = (s) => `
   <span><i class="dot p"></i>P <b>${fmt(s.protein, 1)}</b></span>
   <span><i class="dot c"></i>C <b>${fmt(s.carbs, 1)}</b></span>
@@ -102,7 +118,7 @@ function toast(msg) {
 }
 
 /* ================= Hojas (sheets) ================= */
-let sheet = null; // { name, render }
+let sheet = null;
 function openSheet(name, render, { tall = false } = {}) {
   const root = $("#sheet-root");
   root.classList.remove("open");
@@ -112,7 +128,7 @@ function openSheet(name, render, { tall = false } = {}) {
   sheet.render();
   document.body.classList.add("locked");
   $(".backdrop", root).onclick = closeSheet;
-  root.offsetHeight; // fuerza layout para que la animación corra
+  root.offsetHeight;
   root.classList.add("open");
   return body;
 }
@@ -121,16 +137,35 @@ function closeSheet() {
   sheet = null; root.classList.remove("open"); document.body.classList.remove("locked");
   setTimeout(() => { if (!sheet) root.innerHTML = ""; }, 320);
 }
-const rerenderSheet = (name) => { if (sheet?.name === name) sheet.render(); };
 
 /* ================= Navegación ================= */
+const TABS = ["home", "history", "foods", "settings"];
 let view = settings.onboarded ? "home" : "onboarding";
 let obStep = 0;
 let viewDate = dayStr();
 let showMore = false;
+
+const tabbar = $("#tabbar");
+tabbar.innerHTML = `
+  <button data-tab="home">${I("home", 24)}<span>Inicio</span></button>
+  <button data-tab="history">${I("clock", 24)}<span>Historial</span></button>
+  <button data-tab="add" class="tab-add" aria-label="Registrar comida"><span class="plus">${I("plus", 26)}</span><span>Registrar</span></button>
+  <button data-tab="foods">${I("bowl", 24)}<span>Alimentos</span></button>
+  <button data-tab="settings">${I("sliders", 24)}<span>Ajustes</span></button>`;
+$$("button", tabbar).forEach((b) => b.addEventListener("click", () => {
+  const t = b.dataset.tab;
+  if (t === "add") return openAdd("texto");
+  if (t === "home" && view === "home") viewDate = dayStr();
+  go(t);
+}));
+
 function go(v) { view = v; render(); window.scrollTo(0, 0); }
 function render() {
-  ({ home: renderHome, settings: renderSettings, foods: renderFoods, onboarding: renderOnboarding })[view]();
+  const tabs = TABS.includes(view);
+  tabbar.hidden = !tabs;
+  document.body.classList.toggle("no-tabs", !tabs);
+  $$("button", tabbar).forEach((b) => b.classList.toggle("on", b.dataset.tab === view));
+  ({ home: renderHome, history: renderHistory, foods: renderFoods, settings: renderSettings, add: renderAdd, onboarding: renderOnboarding })[view]();
 }
 
 /* ================= INICIO ================= */
@@ -142,10 +177,10 @@ function renderHome() {
   const R = 74, C = 2 * Math.PI * R;
   const frac = Math.min(1, g.kcal ? t.kcal / g.kcal : 0);
   const today = dayStr();
-  const y = new Date(); y.setDate(y.getDate() - 1);
+  const isToday = viewDate === today;
   const d = new Date(viewDate + "T12:00");
-  const title = viewDate === today ? "Hoy" : viewDate === dayStr(y) ? "Ayer" : cap(d.toLocaleDateString("es-PE", { weekday: "long" }));
   const sub = cap(d.toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long" }));
+  const title = isToday ? "Hoy" : dayLabel(viewDate) === "Ayer" ? "Ayer" : cap(d.toLocaleDateString("es-PE", { weekday: "long" }));
   const pct = (v, goal) => Math.min(100, goal ? (v / goal) * 100 : 0);
   const macro = (k, cls, label) => `
     <div class="macro">
@@ -173,11 +208,10 @@ function renderHome() {
         <div class="eyebrow">
           <button class="icon-btn plain" id="prev" aria-label="Día anterior">${I("left", 18)}</button>
           <span>${sub}</span>
-          <button class="icon-btn plain" id="next" aria-label="Día siguiente" ${viewDate === today ? "disabled" : ""}>${I("right", 18)}</button>
+          <button class="icon-btn plain" id="next" aria-label="Día siguiente" ${isToday ? "disabled" : ""}>${I("right", 18)}</button>
         </div>
-        <h1>${title}</h1>
+        <h1 style="display:flex;align-items:center">${title}${isToday ? "" : `<button class="today-chip" id="today">Ir a hoy</button>`}</h1>
       </div>
-      <button class="icon-btn" id="settings" aria-label="Ajustes">${I("sliders", 20)}</button>
     </header>
 
     <section class="summary">
@@ -196,101 +230,143 @@ function renderHome() {
         <div>G. sat.<b>${fmt(t.satFat, 1)} g</b></div><div>Sodio<b>${fmt(t.sodium)} mg</b></div></div>` : ""}
     </section>
 
-    ${meals || `<div class="empty">
-      <div class="art">${I("bowl", 30)}</div>
-      <h3>${viewDate === today ? "¿Qué vas a comer?" : "Nada registrado"}</h3>
-      <p>Pésalo y escríbelo, o tómale foto<br>a la etiqueta o al plato.</p>
-    </div>`}
-
-    <div class="dock">
-      <button class="btn primary" id="add">${I("plus", 22)} Agregar comida</button>
-      <button class="cam" id="cam" aria-label="Tomar foto">${I("camera", 24)}</button>
+    <div class="block-title"><h3>Registrar comida</h3></div>
+    <div class="tiles">
+      <button class="tile" data-mode="texto"><span class="ti t1">${I("pencil", 22)}</span><b>Escribir</b><span>lo que comiste</span></button>
+      <button class="tile" data-mode="etiqueta"><span class="ti t2">${I("label", 22)}</span><b>Etiqueta</b><span>foto de la tabla nutricional</span></button>
+      <button class="tile" data-mode="plato"><span class="ti t3">${I("plate", 22)}</span><b>Plato</b><span>foto de tu comida</span></button>
     </div>
+
+    ${meals || `<div class="empty" style="padding-top:28px"><p>${isToday ? "Aún no registras nada hoy." : "No registraste nada este día."}</p></div>`}
   `;
   const shift = (n) => { const x = new Date(viewDate + "T12:00"); x.setDate(x.getDate() + n); viewDate = dayStr(x); renderHome(); };
   $("#prev").onclick = () => shift(-1);
   $("#next").onclick = () => shift(1);
-  $("#settings").onclick = () => go("settings");
+  $("#today")?.addEventListener("click", () => { viewDate = today; renderHome(); });
   $("#more").onclick = () => { showMore = !showMore; renderHome(); };
-  $("#add").onclick = () => openAdd();
-  $("#cam").onclick = () => pickPhoto("cam", true);
+  $$("[data-mode]").forEach((b) => b.addEventListener("click", () => openAdd(b.dataset.mode)));
   $$("[data-entry]").forEach((b) => b.addEventListener("click", () => openEntry(b.dataset.entry)));
 }
 
-/* ================= AGREGAR ================= */
-let add = null; // { text, photo, busy, error, results, meal }
-const freshAdd = () => ({ text: "", photo: null, busy: false, error: null, results: null, meal: mealNow() });
-
-function openAdd() {
-  if (!add || (!add.busy && !add.results && !add.error)) add = { ...freshAdd(), photo: add?.photo || null, text: add?.text || "" };
-  openSheet("add", renderAdd, { tall: true });
-  if (!add.results && !add.busy) setTimeout(() => $("#txt")?.focus(), 350);
+/* ================= HISTORIAL ================= */
+function renderHistory() {
+  const days = [...new Set(log.map((e) => e.date))].sort().reverse().slice(0, 90);
+  const g = settings.goals;
+  $("#app").innerHTML = `
+    <h1 class="page-title" style="margin-top:14px">Historial</h1>
+    ${days.length ? `<div class="list">${days.map((ds) => {
+      const t = sum(log.filter((e) => e.date === ds));
+      const over = t.kcal > g.kcal;
+      return `<button class="row day-row" data-day="${ds}">
+        <div class="grow"><div class="t">${dayLabel(ds)}</div>
+          <div class="s">P ${fmt(t.protein)} · C ${fmt(t.carbs)} · G ${fmt(t.fat)} g</div></div>
+        <div class="right"><div class="k">${fmt(t.kcal)} <small>/ ${fmt(g.kcal)}</small></div>
+          <div class="bar-mini"><i class="${over ? "over" : ""}" style="width:${Math.min(100, g.kcal ? (t.kcal / g.kcal) * 100 : 0)}%"></i></div></div>
+        <span class="chev">${I("right", 18)}</span></button>`;
+    }).join("")}</div>`
+    : `<div class="empty"><div class="art">${I("clock", 28)}</div><h3>Sin días registrados</h3><p>Aquí verás cada día con sus calorías y macros.</p></div>`}`;
+  $$("[data-day]").forEach((b) => b.addEventListener("click", () => { viewDate = b.dataset.day; go("home"); }));
 }
 
-// Cámara / galería. auto=true analiza apenas llega la foto.
-let photoAuto = false;
-function pickPhoto(kind, auto = false) {
-  photoAuto = auto;
-  const input = $(kind === "cam" ? "#cam-input" : "#lib-input");
-  input.value = ""; input.click();
+/* ================= REGISTRAR (página) ================= */
+let add = null; // { mode, text, qty, note, photo, busy, error, results, notes, questions, answers, clar, meal }
+const freshAdd = (mode) => ({ mode, text: "", qty: "", note: "", photo: null, busy: false, error: null, results: null, notes: "", questions: [], answers: {}, clar: [], meal: mealNow() });
+
+function openAdd(mode) {
+  if (!add || (!add.busy && !add.results)) add = freshAdd(mode || "texto");
+  else if (mode && add.mode !== mode && !add.busy) add = freshAdd(mode);
+  go("add");
+  if (add.mode === "texto" && !add.results && !add.busy) setTimeout(() => $("#txt")?.focus(), 250);
 }
+function leaveAdd() { if (!add?.busy) add = null; go("home"); }
+
+// Cámara / galería
+function pickPhoto(kind) { const input = $(kind === "cam" ? "#cam-input" : "#lib-input"); input.value = ""; input.click(); }
 for (const id of ["#cam-input", "#lib-input"]) {
   $(id).addEventListener("change", async (e) => {
-    const file = e.target.files?.[0]; if (!file) return;
-    try {
-      const p = await prepImage(file);
-      if (!add || add.results) add = freshAdd();
-      add.photo = p; add.error = null;
-      if (sheet?.name !== "add") openSheet("add", renderAdd, { tall: true }); else sheet.render();
-      if (photoAuto) analyze();
-    } catch { toast("No pude leer esa imagen"); }
+    const file = e.target.files?.[0]; if (!file || !add) return;
+    try { add.photo = await prepImage(file); add.error = null; if (view === "add") renderAdd(); }
+    catch { toast("No pude leer esa imagen"); }
   });
 }
 
-function renderAdd(body) {
+function renderAdd() {
   const s = add;
-  if (s.results) return renderResults(body);
-  body.innerHTML = `
-    <div class="sheet-head"><h2>Agregar comida</h2><button class="icon-btn" data-close aria-label="Cerrar">${I("x", 20)}</button></div>
-    <div class="composer">
-      <textarea id="txt" rows="2" placeholder="¿Qué comiste? Ej: 180 g de pollo y 150 g de arroz" ${s.busy ? "disabled" : ""}>${esc(s.text)}</textarea>
-      ${s.photo ? `<div class="thumb"><img src="${s.photo.dataUrl}" alt="">${s.busy ? "" : `<button class="thumb-x" id="rmphoto" aria-label="Quitar foto">${I("x", 14)}</button>`}</div>` : ""}
-      <div class="composer-bar">
-        <button class="tool" id="cam" ${s.busy ? "disabled" : ""}>${I("camera", 19)} Foto</button>
-        <button class="tool" id="lib" ${s.busy ? "disabled" : ""}>${I("image", 19)} Galería</button>
-        <span class="grow"></span>
-        <button class="btn primary sm" id="go" ${s.busy ? "disabled" : ""}>${s.busy ? '<span class="spin"></span>' : "Calcular"}</button>
-      </div>
-    </div>
-    ${s.busy ? `<div class="loading"><span class="spin lg"></span><p>${s.photo ? "Mirando tu foto…" : "Calculando…"}</p></div>` : ""}
+  if (!s) return go("home");
+  if (s.results) return renderResults();
+  const busyText = { texto: "Calculando…", etiqueta: "Leyendo la etiqueta…", plato: "Mirando tu plato…" }[s.mode];
+  const goText = { texto: "Calcular macros", etiqueta: "Leer etiqueta", plato: "Analizar plato" }[s.mode];
+  const capture = (icon, cls, title, text) => `
+    <div class="capture">
+      <div class="capture-art ti ${cls}">${I(icon, 36)}</div>
+      <h3>${title}</h3><p>${text}</p>
+      <button class="btn primary block" id="cam">${I("camera", 20)} Tomar foto</button>
+      <button class="btn block" id="lib">${I("image", 20)} Elegir de la galería</button>
+    </div>`;
+  const photoCard = () => `<div class="photo-card"><img src="${s.photo.dataUrl}" alt="">${s.busy ? "" : `<button class="retake" id="retake">${I("refresh", 16)} Cambiar</button>`}</div>`;
+
+  let body = "";
+  if (s.mode === "texto") {
+    body = `
+      <div class="composer big"><textarea id="txt" placeholder="Ej: 180 g de pechuga de pollo a la plancha y 150 g de arroz cocido" ${s.busy ? "disabled" : ""}>${esc(s.text)}</textarea></div>
+      <p class="hint">${I("scale", 16)}<span>Pon los gramos de tu balanza y cómo lo cocinaste. Si falta algo importante, te pregunto.</span></p>`;
+  } else if (s.mode === "etiqueta") {
+    body = !s.photo
+      ? capture("label", "t2", "Foto de la tabla nutricional", "Busca la tabla «Información nutricional» en el empaque. Que se lean bien los números.")
+      : `${photoCard()}
+        <div class="group"><div class="field"><label>¿Cuánto vas a comer?</label><input id="qty" type="number" inputmode="decimal" placeholder="Opcional" value="${esc(s.qty)}" ${s.busy ? "disabled" : ""}><span class="unit">g</span></div></div>
+        <p class="foot">Pésalo en tu balanza. Si lo dejas vacío, uso la porción de la etiqueta.</p>`;
+  } else {
+    body = !s.photo
+      ? capture("plate", "t3", "Foto de tu plato", "Tómala desde arriba, con todo el plato a la vista. Después ajustas los gramos con tu balanza.")
+      : `${photoCard()}
+        <div class="group"><textarea class="field-note" id="note" placeholder="Detalles (opcional): frito en aceite, arroz integral, el plato pesa 420 g…" ${s.busy ? "disabled" : ""}>${esc(s.note)}</textarea></div>`;
+  }
+  const ready = s.mode === "texto" || s.photo;
+
+  $("#app").innerHTML = `
+    <div class="topbar"><button class="back" id="back">${I("left", 22)} Inicio</button></div>
+    <h1 class="page-title">Registrar comida</h1>
+    <div class="seg modes">${Object.entries(MODES).map(([k, m]) => `<button data-m="${k}" class="${s.mode === k ? "on" : ""}" ${s.busy ? "disabled" : ""}>${I(m.icon, 17)} ${m.label}</button>`).join("")}</div>
+    ${body}
     ${s.error ? `<div class="alert">${esc(s.error)}</div>` : ""}
-    ${!s.busy && !s.error ? `<p class="hint">${I("sparkle", 16)}<span>Foto de la <b>etiqueta</b> = datos exactos. Foto del <b>plato</b> = estimado que ajustas con tu balanza.</span></p>` : ""}
+    ${ready ? `<button class="btn primary block mt" id="go" ${s.busy ? "disabled" : ""}>${s.busy ? `<span class="spin"></span> ${busyText}` : goText}</button>` : ""}
     <div id="suggest"></div>
   `;
-  const ta = $("#txt", body);
-  const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(200, ta.scrollHeight) + "px"; };
-  grow();
-  ta.addEventListener("input", () => { s.text = ta.value; grow(); drawSuggest(body); });
-  $("#cam", body).onclick = () => pickPhoto("cam");
-  $("#lib", body).onclick = () => pickPhoto("lib");
-  $("#rmphoto", body)?.addEventListener("click", () => { s.photo = null; sheet.render(); });
-  $("#go", body).onclick = analyze;
-  drawSuggest(body);
+  $("#back").onclick = leaveAdd;
+  $$("[data-m]").forEach((b) => b.addEventListener("click", () => {
+    if (s.mode === b.dataset.m) return;
+    add = freshAdd(b.dataset.m); renderAdd();
+    if (add.mode === "texto") $("#txt")?.focus();
+  }));
+  $("#cam")?.addEventListener("click", () => pickPhoto("cam"));
+  $("#lib")?.addEventListener("click", () => pickPhoto("lib"));
+  $("#retake")?.addEventListener("click", () => { s.photo = null; s.error = null; renderAdd(); });
+  $("#qty")?.addEventListener("input", (e) => (s.qty = e.target.value));
+  $("#note")?.addEventListener("input", (e) => (s.note = e.target.value));
+  const ta = $("#txt");
+  if (ta) {
+    const grow = () => { ta.style.height = "auto"; ta.style.height = Math.min(260, Math.max(120, ta.scrollHeight)) + "px"; };
+    grow();
+    ta.addEventListener("input", () => { s.text = ta.value; grow(); drawSuggest(); });
+  }
+  $("#go")?.addEventListener("click", analyze);
+  drawSuggest();
 }
 
 // Sugerencias de "tus alimentos" mientras escribes (sin IA).
-function drawSuggest(body) {
-  const box = $("#suggest", body); if (!box) return;
-  if (add.busy || !foods.length) { box.innerHTML = ""; return; }
+function drawSuggest() {
+  const box = $("#suggest"); if (!box) return;
+  if (!add || add.mode !== "texto" || add.busy || !foods.length) { box.innerHTML = ""; return; }
   const q = norm(add.text.replace(/\d+([.,]\d+)?\s*(kg|g|gr|gramos|ml)?\b/gi, " ").replace(/\s+/g, " "));
   let list = [...foods].sort((a, b) => (b.used || 0) - (a.used || 0));
   if (q) {
-    const words = q.split(" ").filter((w) => w.length > 1 && !["de", "con", "y", "el", "la", "un", "una"].includes(w));
+    const words = q.split(" ").filter((w) => w.length > 1 && !["de", "con", "y", "el", "la", "un", "una", "a"].includes(w));
     list = list.filter((f) => words.some((w) => norm(f.name).includes(w)));
   }
   list = list.slice(0, 8);
   if (!list.length) { box.innerHTML = ""; return; }
-  box.innerHTML = `<div class="section-title">${q ? "De tus alimentos" : "Recientes"}</div>
+  box.innerHTML = `<div class="section-title">${q ? "De tus alimentos · sin IA" : "Recientes · sin IA"}</div>
     <div class="list">${list.map((f) => `
       <button class="row" data-food="${f.id}">
         <div class="grow"><div class="t ellipsis">${esc(f.name)}</div><div class="s">${fmt(f.per100.kcal)} kcal por 100 g</div></div>
@@ -299,34 +375,57 @@ function drawSuggest(body) {
   $$("[data-food]", box).forEach((b) => b.addEventListener("click", () => openQuick(b.dataset.food)));
 }
 
+function applyResult(s, data) {
+  s.results = data.items.map((it) => ({ ...it, grams: Math.round(it.grams * 10) / 10 }));
+  s.notes = data.notes;
+  s.questions = (data.questions || []).filter((q) => q.question && q.options?.length).slice(0, 2);
+  s.answers = {};
+}
+
 async function analyze() {
   const s = add;
   if (!s || s.busy) return;
-  const text = s.text.trim();
-  if (!text && !s.photo) { toast("Escribe qué comiste o toma una foto"); $("#txt")?.focus(); return; }
-  if (!settings.apiKey) { openKeySheet(() => { openSheet("add", renderAdd, { tall: true }); analyze(); }); return; }
-  s.busy = true; s.error = null; rerenderSheet("add");
-  try {
-    const data = await askClaude(text, s.photo);
-    s.results = data.items.map((it) => ({ ...it, grams: Math.round(it.grams * 10) / 10 }));
-    s.notes = data.notes;
-  } catch (err) {
-    s.error = err.message || "Algo falló. Intenta de nuevo.";
-  } finally {
-    s.busy = false; rerenderSheet("add");
+  if (s.mode === "texto" && !s.text.trim()) { toast("Escribe qué comiste"); $("#txt")?.focus(); return; }
+  if (s.mode !== "texto" && !s.photo) { toast("Primero toma la foto"); return; }
+  if (!settings.apiKey) { openKeySheet(() => { closeSheet(); analyze(); }); return; }
+  s.busy = true; s.error = null;
+  if (view === "add") renderAdd();
+  try { applyResult(s, await askClaude(s)); }
+  catch (err) { s.error = err.message || "Algo falló. Intenta de nuevo."; }
+  finally {
+    s.busy = false;
+    if (view === "add" && add === s) { renderAdd(); window.scrollTo(0, 0); }
   }
 }
 
-function renderResults(body) {
+async function refine() {
+  const s = add;
+  s.busy = true; renderResults();
+  try { applyResult(s, await askClaude(s)); }
+  catch (err) { toast(err.message || "No pude recalcular"); s.questions = []; s.answers = {}; }
+  finally {
+    s.busy = false;
+    if (view === "add" && add === s) renderAdd();
+  }
+}
+
+function renderResults() {
   const s = add;
   const total = () => sum(s.results);
-  body.innerHTML = `
-    <div class="sheet-head">
-      <button class="icon-btn" id="back" aria-label="Volver">${I("left", 20)}</button>
-      <h2>Revisa y ajusta</h2>
-      <button class="icon-btn" data-close aria-label="Cerrar">${I("x", 20)}</button>
-    </div>
-    <p class="sub">Si algo no cuadra, corrige los gramos con tu balanza.</p>
+  const qs = s.questions;
+  $("#app").innerHTML = `
+    <div class="topbar"><button class="back" id="back">${I("left", 22)} Atrás</button>
+      <button class="link" id="cancel" style="padding-right:0">Cancelar</button></div>
+    <h1 class="page-title">Resultado</h1>
+    ${s.busy ? `<div class="ask" style="text-align:center"><span class="spin lg"></span><p class="muted" style="margin:10px 0 0">Ajustando con tus respuestas…</p></div>` : ""}
+    ${!s.busy && qs.length ? `<div class="ask">
+      <div class="ask-head">${I("sparkle", 18)} Para ser más exacto</div>
+      ${qs.map((q, qi) => `<div class="ask-q"><p>${esc(q.question)}</p>
+        <div class="ask-opts">${q.options.map((o, oi) => `<button class="chip ${s.answers[qi] === o ? "on" : ""}" data-q="${qi}" data-o="${oi}">${esc(o)}</button>`).join("")}</div></div>`).join("")}
+      <p class="foot">Responde y recalculo. O ignóralo y agrega con el estimado.</p>
+    </div>` : ""}
+    ${!s.busy && s.clar.length ? `<p class="answered">Ajustado con: ${s.clar.map((c) => esc(c.a)).join(" · ")}</p>` : ""}
+    <div class="${s.busy ? "refining" : ""}">
     ${s.results.map((it, i) => {
       const x = scale(it.per100, it.grams);
       return `<div class="food-card" data-i="${i}">
@@ -343,28 +442,40 @@ function renderResults(body) {
       </div>`;
     }).join("")}
     ${s.notes ? `<p class="note">${esc(s.notes)}</p>` : ""}
+    <div class="section-title" style="margin-top:18px">¿En qué comida?</div>
     ${mealChips(s.meal)}
-    <button class="btn primary block" id="save">Agregar · <span id="tot">${fmt(total().kcal)}</span> kcal</button>
+    </div>
+    <div class="sticky-cta"><button class="btn primary block" id="save" ${s.busy ? "disabled" : ""}>Agregar · <span id="tot">${fmt(total().kcal)}</span> kcal</button></div>
   `;
-  $$(".food-card", body).forEach((card) => {
+  $("#back").onclick = () => { if (s.busy) return; s.results = null; s.questions = []; s.clar = []; renderAdd(); };
+  $("#cancel").onclick = leaveAdd;
+  $$("[data-q]").forEach((b) => b.addEventListener("click", () => {
+    const qi = +b.dataset.q; const q = qs[qi];
+    s.answers[qi] = q.options[+b.dataset.o];
+    $$(`[data-q="${qi}"]`).forEach((x) => x.classList.toggle("on", x === b));
+    if (qs.every((_, i) => s.answers[i])) {
+      qs.forEach((qq, i) => s.clar.push({ q: qq.question, a: s.answers[i] }));
+      refine();
+    }
+  }));
+  $$(".food-card").forEach((card) => {
     const it = s.results[+card.dataset.i];
     $(".g", card).addEventListener("input", (e) => {
       it.grams = num(e.target.value);
       const x = scale(it.per100, it.grams);
       $("[data-k]", card).textContent = fmt(x.kcal);
       $("[data-m]", card).innerHTML = macroLine(x);
-      $("#tot", body).textContent = fmt(total().kcal);
+      $("#tot").textContent = fmt(total().kcal);
     });
     $(".fc-name", card).addEventListener("input", (e) => (it.name = e.target.value));
     $(".rm", card).onclick = () => {
       s.results.splice(+card.dataset.i, 1);
-      if (!s.results.length) s.results = null;
-      sheet.render();
+      if (!s.results.length) { s.results = null; s.questions = []; }
+      renderAdd();
     };
   });
-  bindChips(body, (m) => (s.meal = m));
-  $("#back", body).onclick = () => { s.results = null; sheet.render(); };
-  $("#save", body).onclick = () => {
+  bindChips($("#app"), (m) => (s.meal = m));
+  $("#save").onclick = () => {
     for (const it of s.results) {
       if (!it.grams) continue;
       const name = it.name.trim() || "Alimento";
@@ -372,7 +483,7 @@ function renderResults(body) {
       rememberFood(name, it.per100, it.grams);
     }
     saveLog(); saveFoods();
-    add = null; closeSheet(); go("home"); toast(`Agregado a ${s.meal}`);
+    add = null; go("home"); toast(`Agregado a ${s.meal}`);
   };
 }
 
@@ -386,8 +497,10 @@ function openQuick(id) {
       <label class="big-grams"><input id="g" type="number" inputmode="decimal" placeholder="${f.lastGrams || 100}"><span>g</span></label>
       <div class="big-caption">Escribe lo que marca tu balanza</div>
       <div class="stat-row" id="stats"></div>
+      <div class="section-title" style="margin-top:0">¿En qué comida?</div>
       ${mealChips(meal)}
-      <button class="btn primary block" id="ok">Agregar</button>`;
+      <button class="btn primary block" id="ok">Agregar</button>
+      ${view === "foods" ? `<button class="link" id="edit" style="width:100%;margin-top:4px">Editar alimento</button>` : ""}`;
     const g = $("#g", body);
     const grams = () => num(g.value) || num(g.placeholder);
     const draw = () => {
@@ -403,6 +516,7 @@ function openQuick(id) {
       f.used = Date.now(); f.lastGrams = qty; saveLog(); saveFoods();
       add = null; closeSheet(); go("home"); toast(`Agregado a ${meal}`);
     };
+    $("#edit", body)?.addEventListener("click", () => editFood(f.id));
   });
 }
 
@@ -420,7 +534,7 @@ function openEntry(id) {
     body.innerHTML = `
       <div class="sheet-head"><input class="name-input" id="nm" value="${esc(e.name)}" aria-label="Nombre"><button class="icon-btn" data-close aria-label="Cerrar">${I("x", 20)}</button></div>
       <label class="big-grams"><input id="g" type="number" inputmode="decimal" value="${e.grams}"><span>g</span></label>
-      <div class="big-caption">Toca para cambiar los gramos</div>
+      <div class="big-caption">Toca el número para cambiar los gramos</div>
       <div class="nutr" id="tbl"></div>
       ${mealChips(meal)}
       <button class="btn primary block" id="ok">Guardar</button>
@@ -442,7 +556,7 @@ function openEntry(id) {
 
 /* ================= Claude ================= */
 const RESULT_SCHEMA = {
-  type: "object", additionalProperties: false, required: ["items", "notes"],
+  type: "object", additionalProperties: false, required: ["items", "questions", "notes"],
   properties: {
     items: {
       type: "array",
@@ -459,6 +573,13 @@ const RESULT_SCHEMA = {
         },
       },
     },
+    questions: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false, required: ["question", "options"],
+        properties: { question: { type: "string" }, options: { type: "array", items: { type: "string" } } },
+      },
+    },
     notes: { type: "string" },
   },
 };
@@ -471,26 +592,29 @@ Reglas:
 - "grams" es la cantidad que comió. Si el usuario da gramos, úsalos exactamente. Si da unidades (1 huevo, media palta, 2 tajadas), conviértelas con pesos típicos. Si no da cantidad, estima una porción típica y usa confidence "baja".
 - Usa valores de referencia confiables (USDA FoodData Central; tablas peruanas o latinoamericanas cuando aplique). Considera el aceite de cocción si el método lo implica.
 - "confidence": "alta" si los datos vienen de una etiqueta o el alimento es estándar y el peso es conocido; "media" si estimaste algo; "baja" si estimaste porción y composición.
-- "notes": una frase útil en español (el supuesto principal, o qué pesar para más precisión). Puede quedar vacío.`;
+- "questions": como máximo 2 preguntas, y SOLO si la respuesta cambiaría el total de calorías en más de ~10% y no se puede deducir. Ejemplos: si se frió y con cuánto aceite, si los gramos son en crudo o cocido, con o sin piel, tipo de leche, cuánto comió si no lo dijo. Pregunta corta y concreta, con 2 a 4 opciones de máximo 4 palabras cada una. Aun así, en "items" devuelve siempre tu mejor estimado. Si todo está claro, devuelve una lista vacía. En etiquetas legibles casi nunca hace falta preguntar. Nunca repitas algo que el usuario ya aclaró.
+- "notes": una frase útil en español (el supuesto principal). Puede quedar vacío. Si no puedes identificar comida o leer la etiqueta, devuelve "items" vacío y explica en "notes" qué pasó y cómo tomar mejor la foto.`;
 
-function userPrompt(text, hasPhoto) {
-  if (!hasPhoto) return `El usuario comió esto:\n\n${text}`;
-  return `Analiza esta foto.
-- Si es una tabla nutricional o etiqueta de un empaque: lee los valores con exactitud y conviértelos a por 100 g (si la tabla da valores por porción, divide entre el peso de la porción y multiplica por 100; si solo da kJ, convierte a kcal). Devuelve un solo item con el nombre del producto si se ve. Para "grams" usa la cantidad que indique el usuario o, si no indica, el tamaño de porción de la etiqueta. Confidence "alta" si se lee bien.
-- Si es comida servida: identifica cada componente por separado y estima su peso en gramos usando el plato, los cubiertos y otros objetos como escala.${text ? `\n\nLo que dice el usuario: ${text}` : ""}`;
+function userPrompt(s) {
+  let p;
+  if (s.mode === "texto") p = `El usuario comió esto:\n\n${s.text.trim()}`;
+  else if (s.mode === "etiqueta") p = `Esta es la foto de la tabla nutricional de un empaque. Lee los valores con exactitud y conviértelos a por 100 g (si la tabla da valores por porción, divide entre el peso de la porción y multiplica por 100; si solo da kJ, convierte a kcal). Devuelve un solo item con el nombre del producto si se ve (si no, un nombre genérico). Para "grams": ${num(s.qty) ? `el usuario va a comer ${num(s.qty)} g` : "usa el tamaño de porción indicado en la etiqueta"}. Confidence "alta" si se lee bien.`;
+  else p = `Esta es una foto de un plato de comida. Identifica cada componente por separado y estima su peso en gramos (comida ya servida), usando el plato, los cubiertos y otros objetos como escala.${s.note.trim() ? `\n\nDetalles del usuario: ${s.note.trim()}` : ""}`;
+  if (s.clar.length) p += `\n\nAclaraciones del usuario (ya respondidas, no las vuelvas a preguntar):\n${s.clar.map((c) => `- ${c.q} → ${c.a}`).join("\n")}`;
+  return p;
 }
 
 let sdkPromise;
 const loadSdk = () => (sdkPromise ??= import(SDK_URL));
 
-async function askClaude(text, photo) {
+async function askClaude(s) {
   let Anthropic;
   try { ({ default: Anthropic } = await loadSdk()); }
   catch { sdkPromise = null; throw new Error("Sin conexión. Revisa tu internet e intenta de nuevo."); }
   const client = new Anthropic({ apiKey: settings.apiKey, dangerouslyAllowBrowser: true, maxRetries: 2 });
   const content = [];
-  if (photo) content.push({ type: "image", source: { type: "base64", media_type: photo.mediaType, data: photo.base64 } });
-  content.push({ type: "text", text: userPrompt(text, !!photo) });
+  if (s.photo && s.mode !== "texto") content.push({ type: "image", source: { type: "base64", media_type: s.photo.mediaType, data: s.photo.base64 } });
+  content.push({ type: "text", text: userPrompt(s) });
 
   let res;
   try {
@@ -501,7 +625,7 @@ async function askClaude(text, photo) {
       fallbacks: "default",
       system: SYSTEM,
       messages: [{ role: "user", content }],
-      output_config: { effort: photo ? "medium" : "low", format: { type: "json_schema", schema: RESULT_SCHEMA } },
+      output_config: { effort: s.mode === "texto" ? "low" : "medium", format: { type: "json_schema", schema: RESULT_SCHEMA } },
     });
   } catch (err) {
     if (err instanceof Anthropic.AuthenticationError) throw new Error("Tu API key no funciona. Revísala en Ajustes.");
@@ -515,7 +639,7 @@ async function askClaude(text, photo) {
   if (res.stop_reason === "refusal") throw new Error("No pude analizar esto. Prueba con otra foto o descripción.");
   if (res.stop_reason === "max_tokens") throw new Error("Son demasiados alimentos a la vez. Divídelo en dos.");
   const data = JSON.parse(res.content.filter((b) => b.type === "text").map((b) => b.text).join(""));
-  if (!Array.isArray(data.items) || !data.items.length) throw new Error("No encontré comida aquí. Describe un poco más o prueba otra foto.");
+  if (!Array.isArray(data.items) || !data.items.length) throw new Error(data.notes || "No encontré comida aquí. Describe un poco más o prueba otra foto.");
   return data;
 }
 
@@ -549,7 +673,6 @@ function calcGoals(p) {
   return { kcal, protein, carbs, fat };
 }
 
-// Formulario de metas (se usa en la bienvenida y en Ajustes)
 function goalsForm(el, onDone, { cta = "Continuar" } = {}) {
   const p = { ...settings.profile };
   const seg = (key, opts) => `<div class="seg" data-seg="${key}">${opts.map(([v, l]) => `<button data-v="${v}" class="${p[key] === v ? "on" : ""}">${l}</button>`).join("")}</div>`;
@@ -572,7 +695,7 @@ function goalsForm(el, onDone, { cta = "Continuar" } = {}) {
     const g = calcGoals(p);
     $("#res", el).innerHTML = `<div class="muted" style="font-size:14px">Tu meta diaria</div>
       <div class="big">${fmt(g.kcal)} <small>kcal</small></div>
-      <div class="mac"><span><i class="dot p"></i><b>${g.protein}</b> g</span><span><i class="dot c"></i><b>${g.carbs}</b> g</span><span><i class="dot f"></i><b>${g.fat}</b> g</span></div>`;
+      <div class="mac"><span><i class="dot p"></i><b>${g.protein}</b> g prot</span><span><i class="dot c"></i><b>${g.carbs}</b> g carb</span><span><i class="dot f"></i><b>${g.fat}</b> g grasa</span></div>`;
   };
   $$("[data-seg]", el).forEach((sg) => $$("button", sg).forEach((b) => b.addEventListener("click", () => {
     p[sg.dataset.seg] = b.dataset.v; $$("button", sg).forEach((x) => x.classList.toggle("on", x === b)); draw();
@@ -585,7 +708,6 @@ function goalsForm(el, onDone, { cta = "Continuar" } = {}) {
   };
 }
 
-// Conectar la API key (bienvenida y Ajustes)
 function keyForm(el, onDone, { skip = false } = {}) {
   el.innerHTML = `
     <ol class="steps">
@@ -627,6 +749,9 @@ function openKeySheet(after) {
 /* ================= BIENVENIDA ================= */
 function renderOnboarding() {
   const dots = `<div class="dots">${[0, 1, 2].map((i) => `<i class="${i === obStep ? "on" : ""}"></i>`).join("")}</div>`;
+  const back = obStep ? `<div class="topbar"><button class="back" id="obback">${I("left", 22)} Atrás</button></div>` : "";
+  const step = (n) => { obStep = n; renderOnboarding(); window.scrollTo(0, 0); };
+  const finish = () => { settings.onboarded = true; saveSettings(); go("home"); };
   const app = $("#app");
   if (obStep === 0) {
     app.innerHTML = `<div class="ob">
@@ -634,30 +759,32 @@ function renderOnboarding() {
       <div class="ob-hero"><img src="icons/icon-512.png" alt=""><h1 style="margin-top:20px">Tus macros,<br>sin complicarte</h1>
       <p class="lead">Pesa tu comida y dile a la app qué es.<br>Ella hace las cuentas.</p></div>
       <div class="feat"><div class="ic">${I("pencil", 20)}</div><div><b>Escríbelo como hablas</b><span>"180 g de pollo y 150 g de arroz"</span></div></div>
-      <div class="feat"><div class="ic">${I("camera", 20)}</div><div><b>O tómale foto</b><span>A la etiqueta del empaque o a tu plato</span></div></div>
-      <div class="feat"><div class="ic">${I("bolt", 20)}</div><div><b>Lo de siempre, en un toque</b><span>Recuerda lo que comes y solo pones los gramos</span></div></div>
+      <div class="feat"><div class="ic">${I("label", 20)}</div><div><b>Foto de la etiqueta</b><span>Lee la tabla nutricional del empaque</span></div></div>
+      <div class="feat"><div class="ic">${I("plate", 20)}</div><div><b>Foto del plato</b><span>Reconoce cada cosa y estima los gramos</span></div></div>
+      <div class="feat"><div class="ic">${I("bolt", 20)}</div><div><b>Lo de siempre, en un toque</b><span>Recuerda lo que comes; solo pones los gramos</span></div></div>
       <div class="actions"><button class="btn primary block" id="next">Empezar</button></div>
     </div>`;
-    $("#next").onclick = () => { obStep = 1; renderOnboarding(); window.scrollTo(0, 0); };
+    $("#next").onclick = () => step(1);
   } else if (obStep === 1) {
-    app.innerHTML = `<div class="ob">${dots}<h1>Tu meta diaria</h1>
+    app.innerHTML = `<div class="ob">${back}${dots}<h1>Tu meta diaria</h1>
       <p class="lead">La calculo con tus datos. Puedes cambiarla cuando quieras.</p><div id="gf"></div></div>`;
-    goalsForm($("#gf"), () => { obStep = 2; renderOnboarding(); window.scrollTo(0, 0); });
+    goalsForm($("#gf"), () => (settings.apiKey ? finish() : step(2)));
   } else {
-    app.innerHTML = `<div class="ob">${dots}<h1>Conecta la IA</h1>
+    app.innerHTML = `<div class="ob">${back}${dots}<h1>Conecta la IA</h1>
       <p class="lead">Macros usa Claude para entender lo que escribes y leer tus fotos. Solo necesitas tu propia API key, una vez.</p>
       <div id="kf" style="margin-top:18px;display:flex;flex-direction:column;flex:1"></div></div>`;
-    keyForm($("#kf"), () => { settings.onboarded = true; saveSettings(); go("home"); }, { skip: true });
+    keyForm($("#kf"), finish, { skip: true });
   }
+  $("#obback")?.addEventListener("click", () => step(obStep - 1));
 }
 
 /* ================= AJUSTES ================= */
 function renderSettings() {
   const g = settings.goals;
   $("#app").innerHTML = `
-    <header class="page-head"><button class="icon-btn" id="back" aria-label="Volver">${I("left", 20)}</button><h1>Ajustes</h1></header>
+    <h1 class="page-title" style="margin-top:14px">Ajustes</h1>
 
-    <div class="group-title">Meta diaria</div>
+    <div class="group-title" style="margin-top:0">Meta diaria</div>
     <div class="group">
       <div class="field"><label>Calorías</label><input data-goal="kcal" type="number" inputmode="numeric" value="${g.kcal}"><span class="unit">kcal</span></div>
       <div class="field"><label><i class="dot p"></i> Proteína</label><input data-goal="protein" type="number" inputmode="numeric" value="${g.protein}"><span class="unit">g</span></div>
@@ -679,22 +806,22 @@ function renderSettings() {
         </select><span class="val">${I("down", 16)}</span></div>
     </div>
 
-    <div class="group-title">Comida</div>
-    <div class="group">
-      <button class="field tap" id="foods" style="width:100%"><label style="text-align:left">Mis alimentos</label><span class="val">${foods.length}</span><span class="val">${I("right", 18)}</span></button>
-    </div>
-
     <div class="group-title">Respaldo</div>
     <div class="group">
-      <button class="field tap" id="exp" style="width:100%"><label style="text-align:left">Exportar mis datos</label></button>
-      <button class="field tap" id="imp" style="width:100%"><label style="text-align:left">Importar respaldo</label></button>
+      <button class="field tap" id="exp" style="width:100%"><label style="text-align:left">Exportar mis datos</label><span class="val">${I("right", 18)}</span></button>
+      <button class="field tap" id="imp" style="width:100%"><label style="text-align:left">Importar respaldo</label><span class="val">${I("right", 18)}</span></button>
     </div>
     <p class="foot">Tus datos viven solo en este teléfono. Exporta un respaldo de vez en cuando.</p>
+
+    <div class="group-title">Ayuda</div>
+    <div class="group">
+      <button class="field tap" id="intro" style="width:100%"><label style="text-align:left">Ver la bienvenida otra vez</label><span class="val">${I("right", 18)}</span></button>
+    </div>
+    <p class="version">Macros · versión ${APP_VERSION}</p>
   `;
   $("#model").value = settings.model || DEFAULT_MODEL;
   const sumk = () => { $("#sumk").textContent = `Tus macros suman ${fmt(g.protein * 4 + g.carbs * 4 + g.fat * 9)} kcal.`; };
   sumk();
-  $("#back").onclick = () => go("home");
   $$("[data-goal]").forEach((i) => i.addEventListener("input", () => { g[i.dataset.goal] = num(i.value); saveSettings(); sumk(); }));
   $("#recalc").onclick = () => openSheet("goals", (body) => {
     body.innerHTML = `<div class="sheet-head"><h2>Recalcular meta</h2><button class="icon-btn" data-close aria-label="Cerrar">${I("x", 20)}</button></div><div id="gf"></div>`;
@@ -702,13 +829,13 @@ function renderSettings() {
   }, { tall: true });
   $("#key").onclick = () => openKeySheet(() => { closeSheet(); renderSettings(); });
   $("#model").onchange = (e) => { settings.model = e.target.value; saveSettings(); toast("Modelo cambiado"); };
-  $("#foods").onclick = () => go("foods");
   $("#exp").onclick = exportData;
   $("#imp").onclick = () => { const i = $("#import-input"); i.value = ""; i.click(); };
+  $("#intro").onclick = () => { obStep = 0; go("onboarding"); };
 }
 
 async function exportData() {
-  const blob = new Blob([JSON.stringify({ app: "macros", v: 2, log, foods, goals: settings.goals, profile: settings.profile })], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ app: "macros", v: 3, log, foods, goals: settings.goals, profile: settings.profile })], { type: "application/json" });
   const file = new File([blob], `macros-respaldo-${dayStr()}.json`, { type: "application/json" });
   if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file] }); return; } catch { return; } }
   const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
@@ -727,26 +854,25 @@ $("#import-input").addEventListener("change", async (e) => {
   } catch { toast("Ese archivo no es un respaldo de Macros"); }
 });
 
-/* ================= MIS ALIMENTOS ================= */
+/* ================= ALIMENTOS ================= */
 function renderFoods() {
   $("#app").innerHTML = `
-    <header class="page-head"><button class="icon-btn" id="back" aria-label="Volver">${I("left", 20)}</button><h1>Mis alimentos</h1>
-      <button class="icon-btn" id="new" aria-label="Nuevo alimento">${I("plus", 20)}</button></header>
+    <div class="topbar" style="margin-top:8px"><span></span><button class="icon-btn" id="new" aria-label="Crear alimento">${I("plus", 20)}</button></div>
+    <h1 class="page-title" style="margin-top:0">Mis alimentos</h1>
+    <p class="page-sub">Todo lo que registras se guarda aquí. Tócalo, pon los gramos y listo, sin IA.</p>
     <label class="search">${I("search", 18)}<input id="q" placeholder="Buscar" autocomplete="off"></label>
-    <div id="list"></div>
-    <p class="foot">Todo lo que agregas se guarda aquí solo. La próxima vez lo eliges y pones los gramos, sin usar IA.</p>`;
+    <div id="list"></div>`;
   const draw = () => {
     const q = norm($("#q").value);
-    const list = foods.filter((f) => norm(f.name).includes(q)).sort((a, b) => a.name.localeCompare(b.name, "es"));
+    const list = foods.filter((f) => norm(f.name).includes(q)).sort((a, b) => (b.used || 0) - (a.used || 0));
     $("#list").innerHTML = list.length ? `<div class="list">${list.map((f) => `
       <button class="row" data-id="${f.id}"><div class="grow"><div class="t ellipsis">${esc(f.name)}</div>
       <div class="s">por 100 g · ${fmt(f.per100.kcal)} kcal · P ${fmt(f.per100.protein, 1)} · C ${fmt(f.per100.carbs, 1)} · G ${fmt(f.per100.fat, 1)}</div></div>
-      <span class="chev">${I("right", 18)}</span></button>`).join("")}</div>`
-      : `<div class="empty"><div class="art">${I("bowl", 28)}</div><h3>${foods.length ? "Sin resultados" : "Aún no hay nada"}</h3><p>${foods.length ? "Prueba con otra palabra." : "Lo que agregues aparecerá aquí."}</p></div>`;
-    $$("[data-id]").forEach((b) => b.addEventListener("click", () => editFood(b.dataset.id)));
+      <span class="icon-btn" style="width:32px;height:32px">${I("plus", 18)}</span></button>`).join("")}</div>`
+      : `<div class="empty"><div class="art">${I("bowl", 28)}</div><h3>${foods.length ? "Sin resultados" : "Aún no hay nada"}</h3><p>${foods.length ? "Prueba con otra palabra." : "Lo que registres aparecerá aquí."}</p></div>`;
+    $$("[data-id]").forEach((b) => b.addEventListener("click", () => openQuick(b.dataset.id)));
   };
   $("#q").addEventListener("input", draw); draw();
-  $("#back").onclick = () => go("settings");
   $("#new").onclick = () => editFood(null);
 }
 
@@ -770,6 +896,15 @@ function editFood(id) {
   }, { tall: true });
 }
 
-/* ================= Inicio ================= */
-if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js");
+/* ================= Arranque y actualizaciones ================= */
+if ("serviceWorker" in navigator && location.protocol === "https:") {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register("sw.js").then((reg) => {
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+  }).catch(() => {});
+  // Cuando llega una versión nueva, recarga sola (salvo que estés en medio de algo).
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (hadController && !add && !sheet) location.reload();
+  });
+}
 render();
